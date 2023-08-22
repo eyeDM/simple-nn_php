@@ -2,8 +2,8 @@
 
 class Sensor
 {
-	protected const DEFAULT_ASSOCIATION = 0.1;
-	protected const CORRECTION_STEP = 0.1;
+	protected const DEFAULT_ASSOCIATION = 0.2;
+	protected const CORRECTION_STEP = 0.2;
 
 	protected int $channelsNum;
 
@@ -12,7 +12,7 @@ class Sensor
 	 * вызывает "ассоциацию" с некоторым результатом.
 	 *
 	 * [$channel => [string $possibleResult => float $association]]
-	 * 0 <= $association <= 1
+	 * -1 <= $association <= 1
 	 *
 	 * @var SplFixedArray
 	 */
@@ -23,6 +23,35 @@ class Sensor
 	protected SplFixedArray $possibleResults;
 
 	protected $valueNormalizer;
+
+	/**
+	 * Отображение значение в интервал [0..1].
+	 *
+	 * @param  float  $value
+	 * @return float
+	 */
+	protected function normalizeValue(float $value): float
+	{
+		return call_user_func($this->valueNormalizer, $value);
+	}
+
+	public function __construct(int $channelsNum, array $possibleResults, callable $valueNormalizer)
+	{
+		$this->channelsNum = $channelsNum;
+		$this->initMemory($possibleResults);
+		$this->data = new SplFixedArray($this->channelsNum);
+		$this->possibleResults = SplFixedArray::fromArray($possibleResults);
+		$this->valueNormalizer = $valueNormalizer;
+	}
+
+	public function putData(array $values): void
+	{
+		for ($channel = 0; $channel < $this->channelsNum; $channel++) {
+			$this->data[ $channel ] = isset($values[ $channel ])
+				? $this->normalizeValue($values[ $channel ])
+				: 0;
+		}
+	}
 
 	protected function initMemory(array $possibleResults): void
 	{
@@ -49,46 +78,96 @@ class Sensor
 		$this->memory[ $channel ] = $memoryCell;
 	}
 
-	protected function increaseAssociation(int $channel, string $possibleResult): void
+	protected function increaseAssociation(int $channel, string $possibleResult, float $changeFactor): void
 	{
 		$association = $this->getAssociation($channel, $possibleResult);
-		$association *= (1 + self::CORRECTION_STEP);
+		// $association += $association * $changeFactor + self::CORRECTION_STEP * $changeFactor
+		$association += ($association + self::CORRECTION_STEP) * $changeFactor;
 		if ($association > 1) {
 			$association = 1;
 		}
 		$this->setAssociation($channel, $possibleResult, $association);
 	}
 
-	protected function decreaseAssociation(int $channel, string $possibleResult): void
+	protected function decreaseAssociation(int $channel, string $possibleResult, float $changeFactor): void
 	{
 		$association = $this->getAssociation($channel, $possibleResult);
-		$association *= (1 - self::CORRECTION_STEP);
+		// $association -= $association * $changeFactor + self::CORRECTION_STEP * $changeFactor
+		$association -= ($association + self::CORRECTION_STEP) * $changeFactor;
+		if ($association < -1) {
+			$association = -1;
+		}
 		$this->setAssociation($channel, $possibleResult, $association);
 	}
 
+	/**
+	 * 60% - малая мутация
+	 * 30% - нет мутации
+	 * 10% - существенная мутация
+	 *
+	 * @param  int     $channel
+	 * @param  string  $possibleResult
+	 * @return void
+	 * @throws Exception
+	 */
 	protected function randomChangeAssociation(int $channel, string $possibleResult): void
 	{
-		// TODO
-	}
+		$doIt = random_int(1, 100);
 
-	public function __construct(int $channelsNum, array $possibleResults, callable $valueNormalizer)
-	{
-		$this->channelsNum = $channelsNum;
-		$this->initMemory($possibleResults);
-		$this->data = new SplFixedArray($this->channelsNum);
-		$this->possibleResults = SplFixedArray::fromArray($possibleResults);
-		$this->valueNormalizer = $valueNormalizer;
+		if ($doIt > 70) {
+			$this->increaseAssociation($channel, $possibleResult, lcg_value() / 4);
+		} elseif ($doIt > 40) {
+			$this->decreaseAssociation($channel, $possibleResult, lcg_value() / 4);
+		} elseif ($doIt <= 5) {
+			$this->increaseAssociation($channel, $possibleResult, lcg_value());
+		} elseif ($doIt <= 10) {
+			$this->decreaseAssociation($channel, $possibleResult, lcg_value());
+		}
 	}
 
 	/**
-	 * Отображение значение в интервал [0..1].
+	 * Сенсор выдаёт "предсказание", оно сравнивается с "реальностью";
+	 * в зависимости от того, насколько "предсказание" похоже на "реальность",
+	 * корректируем память.
 	 *
-	 * @param  float  $value
-	 * @return float
+	 * @param  array  $expectedResults  [$result => $realProbability]
+	 * @return void
 	 */
-	protected function normalizeValue(float $value): float
+	protected function doCorrection(array $expectedResults): void
 	{
-		return call_user_func($this->valueNormalizer, $value);
+		// TODO: может, надо не абсолютную силу сигнала учитывать, а относительную?
+
+		foreach ($this->getPrediction() as $result => $probability) {
+			if ($expectedResults[ $result ]) {
+				// увеличиваем ассоциацию на каналах, получивших высокий уровень сигнала;
+				// случайно меняет на остальных
+				foreach ($this->data as $channel => $value) {
+					if ($value > 0.5) {
+						$this->increaseAssociation(
+							$channel,
+							$result,
+							$probability * 4
+						);
+					} else {
+						$this->randomChangeAssociation($channel, $result);
+					}
+				}
+			} else {
+				// уменьшаем ассоциацию на каналах, получивших низкий уровень сигнала;
+				// случайно меняет на остальных
+				foreach ($this->data as $channel => $value) {
+					if ($value < 0.5) {
+						$this->decreaseAssociation(
+							$channel,
+							$result,
+							$probability
+						);
+					} else {
+						$this->randomChangeAssociation($channel, $result);
+					}
+				}
+			}
+		}
 	}
 
 	public function dumpMemory(): SplFixedArray
@@ -96,21 +175,12 @@ class Sensor
 		return $this->memory;
 	}
 
-	public function putData(array $values): void
-	{
-		for ($channel = 0; $channel < $this->channelsNum; $channel++) {
-			$this->data[ $channel ] = isset($values[ $channel ])
-				? $this->normalizeValue($values[ $channel ])
-				: 0;
-		}
-	}
-
 	/**
 	 * Насколько уровень сигнала в каждом из каналов
 	 * напоминает _такой_ результат?
 	 *
 	 * @param  string  $possibleResult
-	 * @return float [0..1]
+	 * @return float   [0..1]
 	 */
 	protected function getAssociationLevel(string $possibleResult): float
 	{
@@ -120,13 +190,22 @@ class Sensor
 		}
 
 		// просто среднее значение? хм...
-		return ($result / $this->channelsNum);
+		$average = $result / $this->channelsNum;
+
+		if ($average > 1) {
+			return 1;
+		}
+		if ($average < 0) {
+			return 0;
+		}
+
+		return $average;
 	}
 
 	/**
 	 * Вероятности того, что бы "увиден" каждый из возможных результатов.
 	 *
-	 * @return array
+	 * @return float[]
 	 */
 	public function getPrediction(): array
 	{
@@ -136,50 +215,15 @@ class Sensor
 			$result[ $possibleResult ] = $this->getAssociationLevel($possibleResult);
 		}
 
+		//var_dump($result);
 		return $result;
 	}
 
-	/**
-	 * Сенсор выдаёт "предсказание", оно сравнивается с "реальностью";
-	 * в зависимости от того, насколько "предсказание" похоже на "реальность",
-	 * корректируем память.
-	 *
-	 * @param  array  $expectedResult  [$possibleResult => $realProbability]
-	 * @return void
-	 */
-	protected function doCorrection(array $expectedResult): void
+	public function train(array $values, array $expectedResults): void
 	{
-		foreach ($this->getPrediction() as $possibleResult => $association) {
-			// надо сравнить $association с $expectedResult[ $possibleResult ];
-			// если "вклад" ячейки памяти был положительным - усиливаем ассоциацию,
-			// иначе - уменьшаем
-			if (
-				($expectedResult[ $possibleResult ] && $association > PREDICTION_THRESHOLD_TRUE)
-				|| (!$expectedResult[ $possibleResult ] && $association < PREDICTION_THRESHOLD_FALSE)
-			) {
-				// верный ответ, усиливаем ассоциацию
-				foreach ($this->data as $channel => $value) {
-					if ($value > PREDICTION_THRESHOLD_TRUE) {
-						$this->increaseAssociation($channel, $possibleResult);
-					} else {
-						$this->randomChangeAssociation($channel, $possibleResult);
-					}
-				}
-			} else {
-				foreach ($this->data as $channel => $value) {
-					if ($value > PREDICTION_THRESHOLD_TRUE) {
-						$this->decreaseAssociation($channel, $possibleResult);
-					} else {
-						$this->randomChangeAssociation($channel, $possibleResult);
-					}
-				}
-			}
-		}
-	}
-
-	public function train(array $values, array $expectedResult): void
-	{
+		//var_dump($values);
 		$this->putData($values);
-		$this->doCorrection($expectedResult);
+		$this->doCorrection($expectedResults);
+		//var_dump($this->memory);
 	}
 }

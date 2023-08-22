@@ -3,12 +3,13 @@
 define('PREDICTION_THRESHOLD_FALSE', 0.25);
 define('PREDICTION_THRESHOLD_TRUE', 0.75);
 
+require_once __DIR__ . '/utils.php';
 require_once __DIR__ . '/ColorRGB.php';
 require_once __DIR__ . '/Pixel.php';
 require_once __DIR__ . '/DataGenerator.php';
 require_once __DIR__ . '/Sensor.php';
 
-function trainSensor(Sensor $Sensor, int $iterations = 10): void
+function trainSensor(Sensor $Sensor, int $iterations = 100): void
 {
 	for ($i = 0; $i < $iterations; $i++) {
 		$Pixel = DataGenerator::getPixel();
@@ -20,7 +21,7 @@ function trainSensor(Sensor $Sensor, int $iterations = 10): void
 }
 
 // тестирование обученной сети
-function testSensor(Sensor $Sensor, int $iterations = 10, bool $debug = false): void
+function testSensor(Sensor $Sensor, int $iterations = 100, bool $debug = false): void
 {
 	$passed = 0;
 	for ($i = 0; $i < $iterations; $i++) {
@@ -43,12 +44,6 @@ function testSensor(Sensor $Sensor, int $iterations = 10, bool $debug = false): 
 	echo "PASSED: {$passed}/{$iterations}", PHP_EOL;
 }
 
-$valueNormalizer = static function (float $value): float
-{
-	//return 1 / (1 + M_E ** -$value);
-	return $value / 255;
-};
-
 $Sensor = new Sensor(
 	3,
 	[
@@ -57,8 +52,8 @@ $Sensor = new Sensor(
 		ColorRGB::Blue->name,
 		ColorRGB::Undefined->name
 	],
-	$valueNormalizer
+	'normalizeRGBChannelValue'
 );
-trainSensor($Sensor, 30);
+trainSensor($Sensor, 500);
 var_dump($Sensor->dumpMemory());
 //testSensor($Sensor);
