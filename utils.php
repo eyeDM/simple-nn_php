@@ -9,8 +9,3 @@ function sigmoid(float $value): float
 {
 	return 1 / (1 + M_E ** -$value);
 }
-
-function normalizeRGBChannelValue(int $value): float
-{
-	return $value / 255;
-}

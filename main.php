@@ -1,20 +1,17 @@
 <?php
 
-define('PREDICTION_THRESHOLD_FALSE', 0.25);
-define('PREDICTION_THRESHOLD_TRUE', 0.75);
-
-require_once __DIR__ . '/utils.php';
+//require_once __DIR__ . '/utils.php';
 require_once __DIR__ . '/ColorRGB.php';
 require_once __DIR__ . '/Pixel.php';
-require_once __DIR__ . '/DataGenerator.php';
+require_once __DIR__ . '/PixelFactory.php';
 require_once __DIR__ . '/Sensor.php';
 
 function trainSensor(Sensor $Sensor, int $iterations = 100): void
 {
 	for ($i = 0; $i < $iterations; $i++) {
-		$Pixel = DataGenerator::getPixel();
+		$Pixel = PixelFactory::getRandom();
 		$Sensor->train(
-			$Pixel->getRGB(),
+			$Pixel->getRelativeChannelValues(),
 			$Pixel->getColorProbabilities()
 		);
 	}
@@ -25,13 +22,15 @@ function testSensor(Sensor $Sensor, int $iterations = 100, bool $debug = false):
 {
 	$passed = 0;
 	for ($i = 0; $i < $iterations; $i++) {
-		$Pixel = DataGenerator::getPixel();
-		$Sensor->putData( $Pixel->getRGB() );
-
+		$Pixel = PixelFactory::getRandom();
+		$Sensor->putData( $Pixel->getRelativeChannelValues() );
+		//$prediction = $Sensor->getPrediction();
 		$realValue = $Pixel->getColor()->name;
-		$prediction = $Sensor->getPrediction();
 
-		if ($prediction[$realValue] > PREDICTION_THRESHOLD_TRUE) {
+		//if ($prediction[$realValue] > Sensor::PREDICTION_THRESHOLD_TRUE) {
+		//	$passed++;
+		//}
+		if ($Sensor->is($realValue)) {
 			$passed++;
 		}
 
@@ -45,15 +44,15 @@ function testSensor(Sensor $Sensor, int $iterations = 100, bool $debug = false):
 }
 
 $Sensor = new Sensor(
-	3,
+	Pixel::CHANNELS_NUM,
 	[
 		ColorRGB::Red->name,
 		ColorRGB::Green->name,
 		ColorRGB::Blue->name,
 		ColorRGB::Undefined->name
-	],
-	'normalizeRGBChannelValue'
+	]
 );
-trainSensor($Sensor, 500);
+trainSensor($Sensor, 1000);
 var_dump($Sensor->dumpMemory());
-//testSensor($Sensor);
+echo '######';
+testSensor($Sensor, 1);

@@ -2,6 +2,9 @@
 
 class Sensor
 {
+	public const PREDICTION_THRESHOLD_FALSE = 0.25;
+	public const PREDICTION_THRESHOLD_TRUE = 0.75;
+
 	protected const DEFAULT_ASSOCIATION = 0.2;
 	protected const CORRECTION_STEP = 0.2;
 
@@ -22,34 +25,18 @@ class Sensor
 
 	protected SplFixedArray $possibleResults;
 
-	protected $valueNormalizer;
-
-	/**
-	 * Отображение значение в интервал [0..1].
-	 *
-	 * @param  float  $value
-	 * @return float
-	 */
-	protected function normalizeValue(float $value): float
-	{
-		return call_user_func($this->valueNormalizer, $value);
-	}
-
-	public function __construct(int $channelsNum, array $possibleResults, callable $valueNormalizer)
+	public function __construct(int $channelsNum, array $possibleResults)
 	{
 		$this->channelsNum = $channelsNum;
 		$this->initMemory($possibleResults);
 		$this->data = new SplFixedArray($this->channelsNum);
 		$this->possibleResults = SplFixedArray::fromArray($possibleResults);
-		$this->valueNormalizer = $valueNormalizer;
 	}
 
 	public function putData(array $values): void
 	{
 		for ($channel = 0; $channel < $this->channelsNum; $channel++) {
-			$this->data[ $channel ] = isset($values[ $channel ])
-				? $this->normalizeValue($values[ $channel ])
-				: 0;
+			$this->data[ $channel ] = $values[ $channel ] ?? 0;
 		}
 	}
 
@@ -73,6 +60,12 @@ class Sensor
 
 	protected function setAssociation(int $channel, string $possibleResult, float $association): void
 	{
+		if ($association > 1) {
+			$association = 1.0;
+		} elseif ($association < -1) {
+			$association = -1.0;
+		}
+
 		$memoryCell = $this->memory[ $channel ];
 		$memoryCell[ $possibleResult ] = $association;
 		$this->memory[ $channel ] = $memoryCell;
@@ -81,29 +74,23 @@ class Sensor
 	protected function increaseAssociation(int $channel, string $possibleResult, float $changeFactor): void
 	{
 		$association = $this->getAssociation($channel, $possibleResult);
-		// $association += $association * $changeFactor + self::CORRECTION_STEP * $changeFactor
-		$association += ($association + self::CORRECTION_STEP) * $changeFactor;
-		if ($association > 1) {
-			$association = 1;
-		}
+		$association += self::CORRECTION_STEP * $changeFactor;
+
 		$this->setAssociation($channel, $possibleResult, $association);
 	}
 
 	protected function decreaseAssociation(int $channel, string $possibleResult, float $changeFactor): void
 	{
 		$association = $this->getAssociation($channel, $possibleResult);
-		// $association -= $association * $changeFactor + self::CORRECTION_STEP * $changeFactor
-		$association -= ($association + self::CORRECTION_STEP) * $changeFactor;
-		if ($association < -1) {
-			$association = -1;
-		}
+		$association -= self::CORRECTION_STEP * $changeFactor;
+
 		$this->setAssociation($channel, $possibleResult, $association);
 	}
 
 	/**
-	 * 60% - малая мутация
-	 * 30% - нет мутации
-	 * 10% - существенная мутация
+	 * 4% - существенная мутация
+	 * 20% - малая мутация
+	 * 75% - нет мутации
 	 *
 	 * @param  int     $channel
 	 * @param  string  $possibleResult
@@ -114,14 +101,14 @@ class Sensor
 	{
 		$doIt = random_int(1, 100);
 
-		if ($doIt > 70) {
+		if ($doIt <= 2) {
+			$this->increaseAssociation($channel, $possibleResult, lcg_value() * 2);
+		} elseif ($doIt <= 4) {
+			$this->decreaseAssociation($channel, $possibleResult, lcg_value() * 2);
+		} elseif ($doIt <= 14) {
 			$this->increaseAssociation($channel, $possibleResult, lcg_value() / 4);
-		} elseif ($doIt > 40) {
+		} elseif ($doIt <= 24) {
 			$this->decreaseAssociation($channel, $possibleResult, lcg_value() / 4);
-		} elseif ($doIt <= 5) {
-			$this->increaseAssociation($channel, $possibleResult, lcg_value());
-		} elseif ($doIt <= 10) {
-			$this->decreaseAssociation($channel, $possibleResult, lcg_value());
 		}
 	}
 
@@ -135,36 +122,35 @@ class Sensor
 	 */
 	protected function doCorrection(array $expectedResults): void
 	{
-		// TODO: может, надо не абсолютную силу сигнала учитывать, а относительную?
-
 		foreach ($this->getPrediction() as $result => $probability) {
+			if (!isset($expectedResults[ $result ])) {
+				continue;
+			}
+
 			if ($expectedResults[ $result ]) {
+				$error = 1 - $probability;
 				// увеличиваем ассоциацию на каналах, получивших высокий уровень сигнала;
-				// случайно меняет на остальных
+				// уменьшаем ассоциацию на каналах, получивших низкий уровень сигнала
 				foreach ($this->data as $channel => $value) {
-					if ($value > 0.5) {
+					if ($value > 0.5) { // FIXME: почему 0.5 ?
 						$this->increaseAssociation(
 							$channel,
 							$result,
-							$probability * 4
+							$error
 						);
 					} else {
-						$this->randomChangeAssociation($channel, $result);
-					}
-				}
-			} else {
-				// уменьшаем ассоциацию на каналах, получивших низкий уровень сигнала;
-				// случайно меняет на остальных
-				foreach ($this->data as $channel => $value) {
-					if ($value < 0.5) {
 						$this->decreaseAssociation(
 							$channel,
 							$result,
 							$probability
 						);
-					} else {
-						$this->randomChangeAssociation($channel, $result);
 					}
+				}
+			} else {
+				//$error = $probability;
+				// случайно меняем на остальных
+				foreach ($this->data as $channel => $value) {
+					$this->randomChangeAssociation($channel, $result);
 				}
 			}
 		}
@@ -185,6 +171,7 @@ class Sensor
 	protected function getAssociationLevel(string $possibleResult): float
 	{
 		$result = 0;
+		// FIXME: отрицательные вероятности гасят положительные
 		foreach ($this->data as $channel => $value) {
 			$result += $this->getAssociation($channel, $possibleResult) * $value;
 		}
@@ -215,8 +202,12 @@ class Sensor
 			$result[ $possibleResult ] = $this->getAssociationLevel($possibleResult);
 		}
 
-		//var_dump($result);
 		return $result;
+	}
+
+	public function is(string $result): bool
+	{
+		return $this->getAssociationLevel($result) > self::PREDICTION_THRESHOLD_TRUE;
 	}
 
 	public function train(array $values, array $expectedResults): void

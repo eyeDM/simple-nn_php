@@ -2,6 +2,9 @@
 
 class Pixel
 {
+	public const CHANNELS_NUM = 3;
+	public const CHANNEL_MAX_VALUE = 255;
+
 	protected int $red;
 	protected int $green;
 	protected int $blue;
@@ -19,20 +22,6 @@ class Pixel
 			$this->green,
 			$this->blue
 		);
-	}
-
-	public function getRGB(): array
-	{
-		return [
-			$this->red,
-			$this->green,
-			$this->blue
-		];
-	}
-
-	public function getColor(): ColorRGB
-	{
-		return $this->color;
 	}
 
 	public static function determineColor(int $red, int $green, int $blue): ColorRGB
@@ -63,13 +52,43 @@ class Pixel
 		return ColorRGB::Undefined;
 	}
 
+	public function getRGB(): array
+	{
+		return [
+			$this->red,
+			$this->green,
+			$this->blue,
+		];
+	}
+
+	public function getRelativeChannelValues(): array
+	{
+		$normalizedValues = [];
+		// Отображение значений в интервал [0..1]
+		foreach ($this->getRGB() as $value) {
+			$normalizedValues[] = $value / self::CHANNEL_MAX_VALUE;
+		}
+
+		//$minValue = min(...$normalizedValues);
+		//foreach ($normalizedValues as &$value) {
+		//	$value -= $minValue;
+		//}
+
+		return $normalizedValues;
+	}
+
+	public function getColor(): ColorRGB
+	{
+		return $this->color;
+	}
+
 	public function getColorProbabilities(): array
 	{
 		$probabilities = [
 			ColorRGB::Red->name => 0,
 			ColorRGB::Green->name => 0,
 			ColorRGB::Blue->name => 0,
-			ColorRGB::Undefined->name => 0
+			ColorRGB::Undefined->name => 0,
 		];
 
 		$probabilities[ $this->color->name ] = 1;
