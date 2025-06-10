@@ -3,8 +3,8 @@
  * Многослойная нейронная сеть с обратным распространением ошибки
  *
  * Реализует полнофункциональную нейронную сеть для классификации.
- * Поддерживает произвольную архитектуру, обучение методом градиентного спуска
- * и предсказание с расчетом точности.
+ * Поддерживает произвольное количество слоёв и нейронов,
+ * обучение методом градиентного спуска и предсказание с расчетом точности.
  */
 class NeuralNetwork
 {
@@ -26,11 +26,10 @@ class NeuralNetwork
 		$this->weights = [];
 		$this->biases = [];
 
-		for ($i = 0; $i < count($this->layers) - 1; $i++) {
+		for ($i = 0, $iMax = count($this->layers) - 1; $i < $iMax; $i++) {
 			$inputSize = $this->layers[$i];
 			$outputSize = $this->layers[$i + 1];
 
-			// He initialization for ReLU, Xavier for sigmoid
 			$scale = sqrt(2.0 / $inputSize);
 
 			$layerWeights = [];
@@ -76,7 +75,6 @@ class NeuralNetwork
 					$z += $currentLayer[$k] * $this->weights[$i][$j][$k];
 				}
 
-				// Use sigmoid for all layers for simplicity and stability
 				$nextLayer[] = $this->sigmoid($z);
 			}
 
@@ -124,10 +122,8 @@ class NeuralNetwork
 		// Update weights and biases
 		for ($layer = 0, $layerMax = count($this->weights); $layer < $layerMax; $layer++) {
 			for ($j = 0, $jMax = count($this->weights[$layer]); $j < $jMax; $j++) {
-				// Update bias
 				$this->biases[$layer][$j] += $this->learningRate * $deltas[$layer][$j];
 
-				// Update weights
 				for ($k = 0, $kMax = count($this->weights[$layer][$j]); $k < $kMax; $k++) {
 					$this->weights[$layer][$j][$k] +=
 						$this->learningRate * $deltas[$layer][$j] * $this->activations[$layer][$k];
