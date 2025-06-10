@@ -1,103 +1,41 @@
 <?php
-
-class Pixel
+/**
+ * Класс для представления пикселя с RGB значениями
+ *
+ * Инкапсулирует RGB значения пикселя (0-255) и предоставляет
+ * методы для нормализации данных и определения цвета. Является основным
+ * типом данных для входа в нейронную сеть.
+ */
+readonly class Pixel
 {
-	public const CHANNELS_NUM = 3;
-	public const CHANNEL_MAX_VALUE = 255;
-
-	protected int $red;
-	protected int $green;
-	protected int $blue;
-
-	protected ColorRGB $color;
-
-	public function __construct(int $red, int $green, int $blue)
-	{
-		$this->red = $red;
-		$this->green = $green;
-		$this->blue = $blue;
-
-		$this->color = self::determineColor(
-			$this->red,
-			$this->green,
-			$this->blue
-		);
+	public function __construct(
+		public int $red,
+		public int $green,
+		public int $blue
+	) {
+		if ($red < 0 || $red > 255 ||
+			$green < 0 || $green > 255 ||
+			$blue < 0 || $blue > 255) {
+			throw new InvalidArgumentException('RGB values must be between 0 and 255');
+		}
 	}
 
-	public static function determineColor(int $red, int $green, int $blue): ColorRGB
-	{
-		$FACTOR = 1.1;
-
-		if (
-			$red > $green * $FACTOR
-			&& $red > $blue * $FACTOR
-		) {
-			return ColorRGB::Red;
-		}
-
-		if (
-			$green > $red * $FACTOR
-			&& $green > $blue * $FACTOR
-		) {
-			return ColorRGB::Green;
-		}
-
-		if (
-			$blue > $red * $FACTOR
-			&& $blue > $green * $FACTOR
-		) {
-			return ColorRGB::Blue;
-		}
-
-		return ColorRGB::Undefined;
-	}
-
-	public function getRGB(): array
+	public function getNormalizedRGB(): array
 	{
 		return [
-			$this->red,
-			$this->green,
-			$this->blue,
+			$this->red / 255.0,
+			$this->green / 255.0,
+			$this->blue / 255.0,
 		];
 	}
 
-	public function getRelativeChannelValues(): array
+	public function getColor(): Color
 	{
-		$normalizedValues = [];
-		// Отображение значений в интервал [0..1]
-		foreach ($this->getRGB() as $value) {
-			$normalizedValues[] = $value / self::CHANNEL_MAX_VALUE;
-		}
-
-		//$minValue = min(...$normalizedValues);
-		//foreach ($normalizedValues as &$value) {
-		//	$value -= $minValue;
-		//}
-
-		return $normalizedValues;
-	}
-
-	public function getColor(): ColorRGB
-	{
-		return $this->color;
-	}
-
-	public function getColorProbabilities(): array
-	{
-		$probabilities = [
-			ColorRGB::Red->name => 0,
-			ColorRGB::Green->name => 0,
-			ColorRGB::Blue->name => 0,
-			ColorRGB::Undefined->name => 0,
-		];
-
-		$probabilities[ $this->color->name ] = 1;
-
-		return $probabilities;
+		return Color::fromRGB($this->red, $this->green, $this->blue);
 	}
 
 	public function __toString(): string
 	{
-		return "({$this->red}, {$this->green}, {$this->blue}) = {$this->color->name}";
+		return "RGB({$this->red}, {$this->green}, {$this->blue})";
 	}
 }
